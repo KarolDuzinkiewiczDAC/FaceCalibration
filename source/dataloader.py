@@ -78,18 +78,18 @@ class ImageLoader():
 
 class TestLoader(Dataset):
     def __init__(self,f):
-        root_dir = os.path.join("../data/synthetic_principal",f"sequencef{f:04d}")
+        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "../data/synthetic_principal", f"sequencef{f:04d}"))
 
         self.root_dir = root_dir
         self.files = [os.path.join(root_dir,f) for f in os.listdir(root_dir)]
         self.files = sorted(self.files,key=str.lower)
-        self.M = 100
-        self.N = 68
+        self.M = 100 # number of frames ???
+        self.N = 68 # number of face landmarks
 
-        self.w = 640
-        self.h = 480
-        self.px = self.w / 2
-        self.py = self.h / 2
+        self.w = 640 # width of image
+        self.h = 480 # height of image
+        self.px = self.w / 2 # principal point x
+        self.py = self.h / 2 # principal point y
 
     def __len__(self):
 
@@ -112,6 +112,7 @@ class TestLoader(Dataset):
 
         x_img = x_img_gt
 
+        # populate data sample dictionary
         sample = {}
         sample['fname'] = fname
         sample['x_w_gt'] = torch.from_numpy(x_w - x_w.mean(0)).float()
@@ -840,7 +841,7 @@ class SyntheticLoader(Dataset):
 
     def __init__(self):
 
-        root_dir = "../extras/shape_simple.mat"
+        root_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '../extras/shape_simple.mat'))
 
         # load shape data
         shape_data = scipy.io.loadmat(root_dir)

@@ -18,7 +18,19 @@ import BPnP
 
 # optimizer for our camera calibration
 class Optimizer():
-    def __init__(self,center, gt=None,sfm_net=None,calib_net=None):
+    def __init__(self, center, gt=None, sfm_net=None, calib_net=None):
+        """Optimizer that estimates best camera instrinsic matrix (K) and
+        face location in camera coordinate system. It uses 2 separate neural
+        networks:
+        * sfm_net - structure/shape from motion to estimate 3D face position
+        * calib_net - network to estimate camera matrix K
+
+        Args:
+            center: principal point location in pixels
+            gt: _description_. Defaults to None.
+            sfm_net: _description_. Defaults to None.
+            calib_net: _description_. Defaults to None.
+        """
         self.bpnp = BPnP.BPnP.apply
 
         # mean shape and eigenvectors for 3dmm
@@ -35,7 +47,7 @@ class Optimizer():
             self.sfm_net = sfm_net
             self.calib_net = calib_net
 
-        self.model_path = os.path.join('model')
+        self.model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'model'))
         self.delta = torch.zeros((68,3),requires_grad=True)
         #self.calib_net.eval()
         #self.sfm_net.eval()
@@ -379,8 +391,17 @@ class Optimizer():
 
         return pred
 
-    # perform Alternating optimization AO
+    # perform Alternating optimization (AO)
     def dualoptimization(self, x, max_iter=5):
+
+        # experimental values
+        # MAX_CALIB_ITER = 20
+        # MAX_SHAPE_ITER = 20
+
+        # defaults used in paper
+        MAX_CALIB_ITER = 5
+        MAX_SHAPE_ITER = 5
+
         # get initial shape and intrinsics
         b = x.shape[0]
         K = self.predict_intrinsic(x).detach()
@@ -394,8 +415,8 @@ class Optimizer():
         #create param optimizer
         best = 100000
         for i in range(max_iter):
-            pred = self.opt_calib(x, pred['S'].mean(0).unsqueeze(0).repeat(b,1,1),still=still,max_iter=5)
-            pred = self.opt_shape(x, pred['K'].mean(0).unsqueeze(0).repeat(b,1,1),max_iter=5)
+            pred = self.opt_calib(x, pred['S'].mean(0).unsqueeze(0).repeat(b,1,1),still=still,max_iter=MAX_CALIB_ITER)
+            pred = self.opt_shape(x, pred['K'].mean(0).unsqueeze(0).repeat(b,1,1),max_iter=MAX_SHAPE_ITER)
             loss = pred['error']
 
             #if ((torch.abs(best - loss) <= 0.01 or best < loss) and i >= 5) or i == max_iter: break
@@ -415,7 +436,7 @@ class Optimizer():
         Xc, R, T = util.EPnP_(x.permute(0,2,1),S,K)
         return S, K, R, T
 
-    # perform Joint optimization JO
+    # perform Joint optimization (JO)
     def jointoptimization(self,x,max_iter=100,still=False):
         b = x.shape[0]
 
@@ -458,7 +479,7 @@ class Optimizer():
         Xc,R,T = util.EPnP_(x.permute(0,2,1),S,K)
         return S, K, R, T
 
-    # perform Joint optimization JO
+    # perform Sequential optimization (SO)
     def sequentialoptimization(self,x,max_iter=100,still=False):
         b = x.shape[0]
         K = self.predict_intrinsic(x)
@@ -687,13 +708,13 @@ class Optimizer():
         _, R, T, mask = util.optimizeGN(km,c_w,scaled_betas,alphas,S,ptsI)
         return R, T
 
-    # reset the networks to random initiailztino
+    # reset the networks to random initialization
     def reset(self,n1, n2):
         self.calib_net = PointNet(n=n1)
         self.sfm_net = PointNet(n=n2)
         self.delta_net = PointNet(n=68*3)
 
-    # get iinitial motion
+    # get initial motion
     def get_initial_motion(self,x):
         b = x.shape[0]
 
@@ -725,7 +746,7 @@ class Optimizer():
         torch.save(self.sfm_net.state_dict(),self.model_path + os.sep + token + 'sfm_net.pt')
 
     # load network from directory
-    def load(self,token=''):
+    def load(self, token=''):
         self.sfm_net.load_state_dict(torch.load(self.model_path + os.sep + token + 'sfm_net.pt'))
         self.calib_net.load_state_dict(torch.load(self.model_path + os.sep + token + 'calib_net.pt'))
         self.sfm_opt = torch.optim.Adam(self.sfm_net.parameters(),lr=5e-1)

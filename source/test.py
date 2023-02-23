@@ -15,6 +15,7 @@ import util
 import time
 import losses
 from optimizer import Optimizer
+from pathlib import Path
 
 #import BiwiLoader
 #import BiwiidLoader
@@ -68,7 +69,7 @@ class DataRecorder():
 # test on dataset
 def test(args):
     outfile = args.out
-    
+
     # data to save from testing
     data = []
     errors = {'error_2d': [], 'error_3d': [], 'error_reld': [], 'error_relf': [],
@@ -84,12 +85,25 @@ def test(args):
 
         k = 0
         while True:
+            # sample is a dictionary containing test data & GT information
             sample = loader[k]
 
             # load the data
+            # extract GT face landmarks in 3D of shape (68, 3)
             shape_gt = sample['x_w_gt']
+            # extract f (normalized focal length) GT
+            # NOTE: It is assumed that fx == fy
             fgt = sample['f_gt']
+            # extract 2D face landmarks locations (every 5-th data frame)
             x = sample['x_img'].permute(0,2,1)[::5]
+
+            # TODO: Enable to dump some test data
+            # torch.save(x, 'x.pt')
+
+            # extract GT camera matrix of shape (3, 3), e.g.:
+            # tensor([[500.,   0., 320.],
+            #         [  0., 500., 240.],
+            #         [  0.,   0.,   1.]])
             K_gt = sample['K']
 
             # make prediction without any optimization
@@ -104,8 +118,14 @@ def test(args):
             gt['S'] = shape_gt
 
             # perform prediction
-            center = torch.tensor([loader.w/2,loader.h/2,1])
-            optim = Optimizer(center,gt=gt)
+            center = torch.tensor([loader.w/2, loader.h/2, 1])
+            # TODO: Why GT data is used to initialize the Optimizer class? Is this used to make prediction about K & S?
+            optim = Optimizer(center, gt=gt)
+            # if you are just running predictions you can set gt=None (default when not provided)
+            # FIXME: Setting GT to None crashes the optimizer
+            # optim = Optimizer(center)
+
+            # load pre-trained weights of 2 optimizer models (for optimizing K and S)
             optim.load('00_')
 
             if args.opt:
@@ -123,12 +143,13 @@ def test(args):
                 else:
                     S, K, R, T = optim.dualoptimization(x)
             else:
+                # this is just prediction without any optimization
                 K = optim.predict_intrinsic(x)
                 S = optim.get_shape(x)
                 #S = optim.predict_shape(x)
                 Xc, R, T = util.EPnP_(x.permute(0,2,1),S,K)
 
-            # get predicted intrinsics
+            # get predicted intrinsics by averaging predictions based on all processed data frames
             f = torch.mean(K[:,0,0])
             px = torch.mean(K[:,0,2])
             py = torch.mean(K[:,1,2])
@@ -176,8 +197,9 @@ def test(args):
     print(f"Mean error px: {np.median(errors['error_px'])}")
     print(f"Mean error py: {np.median(errors['error_py'])}")
 
-
     # prepare output file
+    Path('results').mkdir(parents=True, exist_ok=True)
+
     sio.savemat(outfile,{'data': data})
 
 ##############################################################################################
