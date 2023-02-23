@@ -21,8 +21,12 @@ def load_wet_data() -> Tuple[List[NDArray[np.uint8]], List[NDArray[np.float32]]]
     # DATA_FOLDER = 'data1'
     # VALID_FRAME_INDEXES = VALID_FRAME_INDEXES_DATA_1
 
-    # data2
-    DATA_FOLDER = 'data2'
+    # data2 - from laptop
+    # DATA_FOLDER = 'data2'
+    # VALID_FRAME_INDEXES = [i for i in range(100)]
+
+    # data3 - from phone
+    DATA_FOLDER = 'data3'
     VALID_FRAME_INDEXES = [i for i in range(100)]
 
     frames = []
@@ -165,7 +169,8 @@ def load_gt_camera_parameters() -> NDArray[np.float32]:
         GT camera matrix
     """
 
-    filepath = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), f'../wet/asus_tuf_f15_calibration.npz')))
+    # filepath = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), f'../wet/asus_tuf_f15_calibration.npz')))
+    filepath = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), f'../wet/oppo_reno_6_5g_calibration.npz')))
 
     with open(filepath, 'rb') as f:
         npz_file = np.load(f, allow_pickle=True)
