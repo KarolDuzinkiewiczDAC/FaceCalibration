@@ -222,13 +222,19 @@ def convert_keypoints_list_to_tensor(keypoints_list: List[NDArray[np.float32]]) 
 def main():
     print('*** FaceCalibration test on WET data ***')
 
-    USE_OPTIMIZATION = True
+    # USE_OPTIMIZATION = True
+    USE_OPTIMIZATION = False
 
     np.set_printoptions(formatter={'float': lambda x: "{0:0.3f}".format(x)})
 
     # hardcode the principal point
     # NOTE: It's not really used for any camera metric estimation - just for error calculation
-    center = torch.tensor([640/2, 480/2, 1])
+
+    # for laptop data
+    # center = torch.tensor([640/2, 480/2, 1])
+
+    # for phone data
+    center = torch.tensor([480/2, 640/2, 1])
 
     # initialize FaceCalibration's optimizer
     # NOTE: 'gt' is a dictionary that holds ground truth camera matrix & ground truth 3D face landmark locations.
@@ -255,7 +261,7 @@ def main():
     # SFM_LR = 6
 
     # experimental values
-    SFM_LR = 20
+    SFM_LR = 0.01
 
     if USE_OPTIMIZATION:
         # optimize using Alternating Optimization (AO) approach

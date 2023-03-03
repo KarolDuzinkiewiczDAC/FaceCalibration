@@ -894,7 +894,8 @@ class SyntheticLoader(Dataset):
         shape = shape - shape.mean(1).unsqueeze(1)
         return shape
 
-    def __getitem__(self,idx):
+    # TODO: idx is not used
+    def __getitem__(self, idx):
         # data holders
         M = self.M
         N = self.N

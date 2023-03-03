@@ -5,26 +5,37 @@ import torch
 
 import losses
 import dataloader
+import wet_dataloader
 from model2 import PointNet
 from optimizer import Optimizer
 
+USE_WET_DATALOADER = True
+
 def train(device='cuda'):
 
+    # TODO: This is not used anywhere - is it really needed?
     # create our dataloader
-    data = dataloader.Data(face3dmm='lm')
+    # data = dataloader.Data(face3dmm='lm')
 
     # mean shape and eigenvectors for 3dmm
     # data3dmm = dataloader.SyntheticLoader()
-    loader = dataloader.SyntheticLoader()
-    center = torch.tensor([loader.w/2,loader.h/2,1])
+    loader = None
+    center = None
+
+    if not USE_WET_DATALOADER:
+        loader = dataloader.SyntheticLoader()
+        center = torch.tensor([loader.w / 2,loader.h / 2, 1])
+    else:
+        loader = wet_dataloader.WetSyntheticLoader()
+        center = torch.tensor([loader.camera_frame_width_pixels / 2,loader.camera_frame_height_pixels / 2, 1])
 
     # optimizer
-    optim = Optimizer(center,gt=None)
+    optim = Optimizer(center, gt=None)
     optim.to_cuda()
 
     # TODO: verify if we should use different learning rates
-    optim.sfm_opt = torch.optim.Adam(optim.sfm_net.parameters(),lr=1e-4)
-    optim.calib_opt = torch.optim.Adam(optim.calib_net.parameters(),lr=1e-3)
+    optim.sfm_opt = torch.optim.Adam(optim.sfm_net.parameters(), lr=1e-4)
+    optim.calib_opt = torch.optim.Adam(optim.calib_net.parameters(), lr=1e-3)
 
     # start training
     # TODO: will this loop forever?
@@ -50,8 +61,8 @@ def train(device='cuda'):
 
             # extract GT f to calculate loss
             fgt = batch['f_gt'].float()
-            # TODO: why this isn't used during the training?
-            shape_gt = batch['x_w_gt'].float()
+            # TODO: this isn't used during the training - do we really need it
+            # shape_gt = batch['x_w_gt'].float()
 
             # forward prediction
             # K is a set of predictions of camera matrix for each batch data point of shape (100, 3, 3)
