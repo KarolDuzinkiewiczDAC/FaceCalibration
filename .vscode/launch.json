@@ -4,6 +4,7 @@
     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
     "version": "0.2.0",
     "configurations": [
+
         {
             "name": "wet_test.py",
             "type": "python",
@@ -30,6 +31,14 @@
             "args": [
                 "--opt=AO",
             ]
-        }
+        },
+        {
+            "name": "train.py",
+            "type": "python",
+            "request": "launch",
+            "program": "source/train.py",
+            "console": "integratedTerminal",
+            "justMyCode": true
+        },
     ]
 }

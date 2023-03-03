@@ -7,6 +7,84 @@ from optimizer import Optimizer
 from typing import List, Tuple
 from numpy.typing import NDArray
 
+# mapping between dlib landmark indexes (list index) and Face Blaze landmark index (list value)
+DLIB_2_FACE_BLAZE_MAPPING = [
+    # face outline
+    127,
+    234,
+    93,
+    132,
+    58,
+    172,
+    150,
+    176,
+    152,
+    400,
+    379,
+    397,
+    288,
+    361,
+    323,
+    454,
+    356,
+    # left eyebrow
+    70,
+    63,
+    105,
+    66,
+    107,
+    # right eyebrow
+    336,
+    296,
+    334,
+    293,
+    300,
+    # nose
+    168,
+    197,
+    5,
+    1,
+    98,
+    97,
+    2,
+    326,
+    327,
+    # left eye
+    33,
+    160,
+    158,
+    133,
+    153,
+    144,
+    # right eye
+    362,
+    385,
+    387,
+    263,
+    373,
+    380,
+    # lips
+    61,
+    40,
+    37,
+    0,
+    267,
+    270,
+    291,
+    321,
+    314,
+    17, 84,
+    91,
+    78,
+    82,
+    13,
+    312,
+    308,
+    317,
+    14,
+    87,
+]
+
 # NOTE: Keypoints on few of the captured frames seem a little off, so we don't take those frames into account in calculations.
 VALID_FRAME_INDEXES_DATA_1 = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
@@ -50,12 +128,12 @@ def load_wet_data() -> Tuple[List[NDArray[np.uint8]], List[NDArray[np.float32]]]
 
     dlib_keypoints_list = []
     for single_frame_face_keypoints in face_blaze_keypoints_list:
-        dlib_keypoints_list.append(face_blaze_2_dlib(single_frame_face_keypoints))
+        dlib_keypoints_list.append(face_blaze_2_dlib_2d(single_frame_face_keypoints))
 
     return frames, dlib_keypoints_list
 
 
-def face_blaze_2_dlib(fb_landmarks: NDArray[np.float32], width:int = 640, height: int = 480) -> NDArray[np.float32]:
+def face_blaze_2_dlib_2d(fb_landmarks: NDArray[np.float32], width:int = 640, height: int = 480) -> NDArray[np.float32]:
     """Extract dlib's landmarks out of Face Blaze landmarks and convert to the same coordinate system
     NOTE: For some reason dlib uses a different coordinate system then MediaPipe to report landmark positions in the image.
 
@@ -69,84 +147,6 @@ def face_blaze_2_dlib(fb_landmarks: NDArray[np.float32], width:int = 640, height
     """
 
     assert fb_landmarks.shape == (478, 2)
-
-    # mapping between dlib landmark indexes (list index) and Face Blaze landmark index (list value)
-    DLIB_2_FACE_BLAZE_MAPPING = [
-        # face outline
-        127,
-        234,
-        93,
-        132,
-        58,
-        172,
-        150,
-        176,
-        152,
-        400,
-        379,
-        397,
-        288,
-        361,
-        323,
-        454,
-        356,
-        # left eyebrow
-        70,
-        63,
-        105,
-        66,
-        107,
-        # right eyebrow
-        336,
-        296,
-        334,
-        293,
-        300,
-        # nose
-        168,
-        197,
-        5,
-        1,
-        98,
-        97,
-        2,
-        326,
-        327,
-        # left eye
-        33,
-        160,
-        158,
-        133,
-        153,
-        144,
-        # right eye
-        362,
-        385,
-        387,
-        263,
-        373,
-        380,
-        # lips
-        61,
-        40,
-        37,
-        0,
-        267,
-        270,
-        291,
-        321,
-        314,
-        17, 84,
-        91,
-        78,
-        82,
-        13,
-        312,
-        308,
-        317,
-        14,
-        87,
-    ]
 
     assert len(DLIB_2_FACE_BLAZE_MAPPING) == 68
 
