@@ -6,19 +6,14 @@ import torch
 import losses
 import dataloader
 import wet_dataloader
-from model2 import PointNet
 from optimizer import Optimizer
 
+# a flag describing if we use the default synthetic dataloader (long distances of faces)
+# or use WET-specific data loader which better illustrates example face landmark data recorded with a phone
 USE_WET_DATALOADER = True
 
 def train(device='cuda'):
 
-    # TODO: This is not used anywhere - is it really needed?
-    # create our dataloader
-    # data = dataloader.Data(face3dmm='lm')
-
-    # mean shape and eigenvectors for 3dmm
-    # data3dmm = dataloader.SyntheticLoader()
     loader = None
     center = None
 
@@ -61,8 +56,6 @@ def train(device='cuda'):
 
             # extract GT f to calculate loss
             fgt = batch['f_gt'].float()
-            # TODO: this isn't used during the training - do we really need it
-            # shape_gt = batch['x_w_gt'].float()
 
             # forward prediction
             # K is a set of predictions of camera matrix for each batch data point of shape (100, 3, 3)
