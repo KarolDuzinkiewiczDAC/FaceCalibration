@@ -22,3 +22,6 @@
 **/supp_results
 data
 **/preprocess
+runs
+*.pt
+*.ply

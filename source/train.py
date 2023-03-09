@@ -1,6 +1,4 @@
 
-import itertools
-
 import torch
 
 import losses
@@ -8,80 +6,159 @@ import dataloader
 import wet_dataloader
 from optimizer import Optimizer
 
+import time
+from datetime import datetime
+from itertools import product
+
+from torch.utils.tensorboard import SummaryWriter
+
 # a flag describing if we use the default synthetic dataloader (long distances of faces)
 # or use WET-specific data loader which better illustrates example face landmark data recorded with a phone
 USE_WET_DATALOADER = True
 
+# number of total epochs to run
+EPOCHS_COUNT = 1
+
+# number of synthetic batches generated in single epoch
+# BATCHES_PER_EPOCH = 2000
+BATCHES_PER_EPOCH = 500
+
+# error component weights in summary loss
+F_ERROR_WEIGHTS = [0.1, 1.0, 10.0]
+S_ERROR_WEIGHTS = [0.1, 1.0, 10.0]
+
+# learning rates for K calibration net & head pose estimation net
+CALIB_LRS = [1e-2, 1e-3, 1e-4]
+SFM_LRS = [1e-3, 1e-4, 1e-5 ]
+
 def train(device='cuda'):
+    # define hyper parameters dict
+    hparameters = dict(
+        f_error_weights = F_ERROR_WEIGHTS,
+        s_error_weights = S_ERROR_WEIGHTS,
+        calib_lrs = CALIB_LRS,
+        sfm_lrs = SFM_LRS
+    )
 
-    loader = None
-    center = None
+    # define hyper-parameters sets
+    hparam_values = [v for v in hparameters.values()]
+    print(hparam_values)
 
-    if not USE_WET_DATALOADER:
-        loader = dataloader.SyntheticLoader()
-        center = torch.tensor([loader.w / 2,loader.h / 2, 1])
-    else:
-        loader = wet_dataloader.WetSyntheticLoader()
-        center = torch.tensor([loader.camera_frame_width_pixels / 2,loader.camera_frame_height_pixels / 2, 1])
+    # go through all permutations of the hyper parameters
+    for run_id, (f_error_weight, s_error_weight, calib_lr, sfm_lr) in enumerate(product(*hparam_values)):
 
-    # optimizer
-    optim = Optimizer(center, gt=None)
-    optim.to_cuda()
+        # get current timestamp tag
+        date_time = datetime.fromtimestamp(time.time(), tz=None)
+        timestamp_tag = date_time.strftime("%d-%m-%Y_%H:%M:%S")
 
-    # TODO: verify if we should use different learning rates
-    optim.sfm_opt = torch.optim.Adam(optim.sfm_net.parameters(), lr=1e-4)
-    optim.calib_opt = torch.optim.Adam(optim.calib_net.parameters(), lr=1e-3)
+        # instantiate TensorBoard's SummaryWriter object to track training progress
 
-    # start training
-    # TODO: will this loop forever?
-    for epoch in itertools.count():
-        for i in range(2000):
-            # batch is a dict which holds the following keys:
-            # 1. 'alpha_gt', torch tensor of shape: (199, 1) holding ???
-            # 2. 'x_w_gt', torch tensor of shape: (68, 3) holding 3D landmark coordinates in world coordinate system ???
-            # 3. 'x_cam_gt', torch tensor of shape: (100, 3, 68) holding 3D landmark coordinates in camera coordinate system
-            # 4. 'x_img', torch tensor of shape: (100, 2, 68) holding 2D landmark coordinates in camera image frame
-            # 5. 'x_img_gt', torch tensor of shape: (100, 2, 68) holding 2D landmark coordinates in camera image
-            #    frame (whats the difference with the previous one ???)
-            # 6. 'f_gt', torch tensor of shape: (1) holding GT f
+        # if USE_WET_DATALOADER:
+        #     tb_log_folder = f'runs/wet/{timestamp_tag}'
+        # else:
+        #     tb_log_folder = f'runs/legacy/{timestamp_tag}'
+        # writer = SummaryWriter(log_dir=tb_log_folder)
 
-            batch = loader[i]
-            optim.sfm_opt.zero_grad()
-            optim.calib_opt.zero_grad()
-            # extract 2D landmark locations in image frame
-            x = batch['x_img'].float()
+        data_tag = 'wet' if USE_WET_DATALOADER else 'legacy'
+        comment = f'id_{run_id}_{timestamp_tag},data={data_tag},f_w={f_error_weight:.02f},s_w={s_error_weight:.02f},calib_lr={calib_lr:.06f},sfm_lr={sfm_lr:.06f}'
+        writer = SummaryWriter(comment = comment)
 
-            # # TODO: Enable to dump some test data
-            # torch.save(x, f'x_epoch_{epoch}_iter_{i}.pt')
+        # FIXME: Need to find a way to log training hyper parameters for later reference
+        # log hyper-parameters
+        # writer.add_hparams({'batches_per_epoch': BATCHES_PER_EPOCH, 'hp-param-1': 33.33}, {'metric1': 123.456})
 
-            # extract GT f to calculate loss
-            fgt = batch['f_gt'].float()
+        # placeholders
+        loader = None
+        center = None
 
-            # forward prediction
-            # K is a set of predictions of camera matrix for each batch data point of shape (100, 3, 3)
-            K = optim.predict_intrinsic(x)
-            # S is a set of predictions of 3D face landmarks in world coordinate system of shape (100, 68, 3)
-            # TODO: why not in camera coordinate system?
-            S = optim.get_shape(x)
+        if not USE_WET_DATALOADER:
+            loader = dataloader.SyntheticLoader()
+            center = torch.tensor([loader.w / 2,loader.h / 2, 1])
+        else:
+            loader = wet_dataloader.WetSyntheticLoader()
+            center = torch.tensor([loader.camera_frame_width_pixels / 2,loader.camera_frame_height_pixels / 2, 1])
 
-            # compute error and step
-            # calculate f error relative to GT f (part of the loss)
-            f_error = torch.abs(K.mean(0)[0,0] - fgt) / fgt
-            # compute reprojection error of 3D landmarks onto camera image frame
-            # this uses EPnP algorithm to first find R & t of the camera and then use K to project the 3D
-            # landmarks onto camera image frame - the error between this projection and x taken out of
-            # the data batch is part of the loss
-            s_error = losses.compute_reprojection_error(x.permute(0,2,1),S,K,show=False)
+        # optimizer
+        optim = Optimizer(center, gt=None)
+        optim.to_cuda()
 
-            # s_error = torch.mean(torch.pow(S - shape_gt,2).sum(1))
-            loss = f_error + s_error
-            loss.backward()
-            optim.sfm_opt.step()
-            optim.calib_opt.step()
+        # TODO: verify if we should use different learning rates
+        optim.sfm_opt = torch.optim.Adam(optim.sfm_net.parameters(), lr=sfm_lr)
+        optim.calib_opt = torch.optim.Adam(optim.calib_net.parameters(), lr=calib_lr)
 
-            print(f"epoch: {epoch} | iter: {i} | f_error: {f_error.item():.3f} | f/fgt: {K.mean(0)[0,0].item():.2f}/{fgt.item():.2f} | S_err: {s_error.item():.3f} ")
+        # start training
+        # TODO: will this loop forever?
+        for epoch in range(EPOCHS_COUNT):
+            for i in range(BATCHES_PER_EPOCH):
+                # batch is a dict which holds the following keys:
+                # 1. 'alpha_gt', torch tensor of shape: (199, 1) holding ???
+                # 2. 'x_w_gt', torch tensor of shape: (68, 3) holding 3D landmark coordinates in world coordinate system ???
+                # 3. 'x_cam_gt', torch tensor of shape: (100, 3, 68) holding 3D landmark coordinates in camera coordinate system
+                # 4. 'x_img', torch tensor of shape: (100, 2, 68) holding 2D landmark coordinates in camera image frame
+                # 5. 'x_img_gt', torch tensor of shape: (100, 2, 68) holding 2D landmark coordinates in camera image
+                #    frame (whats the difference with the previous one ???)
+                # 6. 'f_gt', torch tensor of shape: (1) holding GT f
 
-        optim.save(f"{epoch:02d}_")
+                batch = loader[i]
+                optim.sfm_opt.zero_grad()
+                optim.calib_opt.zero_grad()
+                # extract 2D landmark locations in image frame
+                x = batch['x_img'].float()
+
+                # # TODO: Enable to dump some test data
+                # torch.save(x, f'x_epoch_{epoch}_iter_{i}.pt')
+
+                # extract GT f to calculate loss
+                fgt = batch['f_gt'].float()
+
+                # forward prediction
+                # K is a set of predictions of camera matrix for each batch data point of shape (100, 3, 3)
+                K = optim.predict_intrinsic(x)
+                # S is a set of predictions of 3D face landmarks in world coordinate system of shape (100, 68, 3)
+                # TODO: why not in camera coordinate system?
+                S = optim.get_shape(x)
+
+                # compute error and step
+                # calculate f error relative to GT f (part of the loss)
+                f_error = torch.abs(K.mean(0)[0,0] - fgt) / fgt
+                # compute reprojection error of 3D landmarks onto camera image frame
+                # this uses EPnP algorithm to first find R & t of the camera and then use K to project the 3D
+                # landmarks onto camera image frame - the error between this projection and x taken out of
+                # the data batch is part of the loss
+                s_error = losses.compute_reprojection_error(x.permute(0,2,1),S,K,show=False)
+
+                # calculate total loss
+                loss = f_error_weight*f_error + s_error_weight*s_error
+
+                # log f error, s error and summary loss
+                writer.add_scalar('error/f_error', f_error, epoch*BATCHES_PER_EPOCH + i)
+                writer.add_scalar('error/s_error', s_error, epoch*BATCHES_PER_EPOCH + i)
+                writer.add_scalar('loss/train', loss, epoch*BATCHES_PER_EPOCH + i)
+
+                loss.backward()
+                optim.sfm_opt.step()
+                optim.calib_opt.step()
+
+                print(f"epoch: {epoch} | iter: {i} | f_error: {f_error.item():.3f} | f/fgt: {K.mean(0)[0,0].item():.2f}/{fgt.item():.2f} | S_err: {s_error.item():.3f} ")
+
+            # store the model on disk
+            optim.save(f'{epoch:02d}_fw={f_error_weight:.02f}_sw={s_error_weight:.02f}_clr={calib_lr:06f}_slr={sfm_lr:.06f}_')
+
+        # log hyper-parameters
+        writer.add_hparams(
+                {
+                    'f_error_weight': f_error_weight,
+                    's_error_weight': s_error_weight,
+                    'calib_lr': calib_lr,
+                    'sfm_lr': sfm_lr,
+                },
+                {
+                    'f_error': f_error,
+                    's_error': s_error,
+                    'loss': loss,
+                }
+            )
+
 
 if __name__ == '__main__':
 
