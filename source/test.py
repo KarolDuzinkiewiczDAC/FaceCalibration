@@ -1,21 +1,19 @@
 
-import itertools
 import argparse
+import itertools
 import os
 import sys
-
-from numpy.core.records import fromarrays
-import scipy.io as sio
-import torch
-import numpy as np
+import time
+from pathlib import Path
 
 import dataloader
-
-import util
-import time
 import losses
+import numpy as np
+import scipy.io as sio
+import torch
+import util
+from numpy.core.records import fromarrays
 from optimizer import Optimizer
-from pathlib import Path
 
 #import BiwiLoader
 #import BiwiidLoader
@@ -132,7 +130,7 @@ def test(args):
                 if args.opt == 'AO':
                     optim.sfm_opt.param_groups[0]['lr'] = 6
                     try:
-                        S, K, R, T = optim.dualoptimization(x,max_iter=10)
+                        S, K, R, T = optim.dualoptimization(x,global_iter_count=10)
                     except:
                         print("OOPS! SOMETHING WENT WRONG! PROLLY PYTORCH'S SVD GOT A NAN SOMEHOW UHHHH")
                         sys.exit(1)
@@ -246,7 +244,7 @@ def testReal(args):
         # perform prediction
         if args.opt:
             if args.opt == 'AO':
-                S, K, R, T = optim.dualoptimization(x,max_iter=5)
+                S, K, R, T = optim.dualoptimization(x,global_iter_count=5)
             elif args.opt == 'JO':
                 S,K,R,T = optim.jointoptimization(x,max_iter=30)
             elif args.opt == 'SO':

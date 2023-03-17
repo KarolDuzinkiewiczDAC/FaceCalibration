@@ -1,15 +1,13 @@
 
-import torch
-
-import losses
-import dataloader
-import wet_dataloader
-from optimizer import Optimizer
-
 import time
 from datetime import datetime
 from itertools import product
 
+import dataloader
+import losses
+import torch
+import wet_dataloader
+from optimizer import Optimizer
 from torch.utils.tensorboard import SummaryWriter
 
 # a flag describing if we use the default synthetic dataloader (long distances of faces)
@@ -29,15 +27,16 @@ S_ERROR_WEIGHTS = [0.1, 1.0, 10.0]
 
 # learning rates for K calibration net & head pose estimation net
 CALIB_LRS = [1e-2, 1e-3, 1e-4]
-SFM_LRS = [1e-3, 1e-4, 1e-5 ]
+SFM_LRS = [1e-3, 1e-4, 1e-5]
+
 
 def train(device='cuda'):
     # define hyper parameters dict
     hparameters = dict(
-        f_error_weights = F_ERROR_WEIGHTS,
-        s_error_weights = S_ERROR_WEIGHTS,
-        calib_lrs = CALIB_LRS,
-        sfm_lrs = SFM_LRS
+        f_error_weights=F_ERROR_WEIGHTS,
+        s_error_weights=S_ERROR_WEIGHTS,
+        calib_lrs=CALIB_LRS,
+        sfm_lrs=SFM_LRS
     )
 
     # define hyper-parameters sets
@@ -61,11 +60,7 @@ def train(device='cuda'):
 
         data_tag = 'wet' if USE_WET_DATALOADER else 'legacy'
         comment = f'id_{run_id}_{timestamp_tag},data={data_tag},f_w={f_error_weight:.02f},s_w={s_error_weight:.02f},calib_lr={calib_lr:.06f},sfm_lr={sfm_lr:.06f}'
-        writer = SummaryWriter(comment = comment)
-
-        # FIXME: Need to find a way to log training hyper parameters for later reference
-        # log hyper-parameters
-        # writer.add_hparams({'batches_per_epoch': BATCHES_PER_EPOCH, 'hp-param-1': 33.33}, {'metric1': 123.456})
+        writer = SummaryWriter(comment=comment)
 
         # placeholders
         loader = None
@@ -73,21 +68,20 @@ def train(device='cuda'):
 
         if not USE_WET_DATALOADER:
             loader = dataloader.SyntheticLoader()
-            center = torch.tensor([loader.w / 2,loader.h / 2, 1])
+            center = torch.tensor([loader.w / 2, loader.h / 2, 1])
         else:
             loader = wet_dataloader.WetSyntheticLoader()
-            center = torch.tensor([loader.camera_frame_width_pixels / 2,loader.camera_frame_height_pixels / 2, 1])
+            center = torch.tensor([loader.camera_frame_width_pixels / 2, loader.camera_frame_height_pixels / 2, 1])
 
-        # optimizer
+        # instantiate optimizer
         optim = Optimizer(center, gt=None)
         optim.to_cuda()
 
-        # TODO: verify if we should use different learning rates
+        # setup parameters & learning rates
         optim.sfm_opt = torch.optim.Adam(optim.sfm_net.parameters(), lr=sfm_lr)
         optim.calib_opt = torch.optim.Adam(optim.calib_net.parameters(), lr=calib_lr)
 
         # start training
-        # TODO: will this loop forever?
         for epoch in range(EPOCHS_COUNT):
             for i in range(BATCHES_PER_EPOCH):
                 # batch is a dict which holds the following keys:
@@ -120,12 +114,12 @@ def train(device='cuda'):
 
                 # compute error and step
                 # calculate f error relative to GT f (part of the loss)
-                f_error = torch.abs(K.mean(0)[0,0] - fgt) / fgt
+                f_error = torch.abs(K.mean(0)[0, 0] - fgt) / fgt
                 # compute reprojection error of 3D landmarks onto camera image frame
                 # this uses EPnP algorithm to first find R & t of the camera and then use K to project the 3D
                 # landmarks onto camera image frame - the error between this projection and x taken out of
                 # the data batch is part of the loss
-                s_error = losses.compute_reprojection_error(x.permute(0,2,1),S,K,show=False)
+                s_error = losses.compute_reprojection_error(x.permute(0, 2, 1), S, K, show=False)
 
                 # calculate total loss
                 loss = f_error_weight*f_error + s_error_weight*s_error

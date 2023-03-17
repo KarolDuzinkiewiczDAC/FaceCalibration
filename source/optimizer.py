@@ -1,24 +1,32 @@
 
 import os
-import yaml
-
-import util
-import losses
-import dataloader
-import matplotlib.pyplot as plt
-#from TDDFA import TDDFA
-
-import torch
-import torchvision
-import numpy as np
-from model2 import PointNet
-import kornia as kn
 
 import BPnP
+import dataloader
+import kornia as kn
+import losses
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+import torchvision
+import util
+import yaml
+from model2 import PointNet
+# add TensorBaord logging to verify different optimization results
+from torch.utils.tensorboard import SummaryWriter
+
 
 # optimizer for our camera calibration
 class Optimizer():
-    def __init__(self, center, gt=None, sfm_net=None, calib_net=None):
+    def __init__(
+            self,
+            center,
+            gt=None,
+            sfm_net=None,
+            calib_net=None,
+            calib_lr: float = 1e-2,
+            sfm_lr: float = 1e-3,
+            tb_writer: SummaryWriter = None):
         """Optimizer that estimates best camera instrinsic matrix (K) and
         face location in camera coordinate system. It uses 2 separate neural
         networks:
@@ -42,26 +50,30 @@ class Optimizer():
         self.gt = gt
 
         if not sfm_net and not calib_net:
-            self.reset(3,199)
+            # if no model is provided we reset all the weights
+            self.reset(3, 199)
         else:
             self.sfm_net = sfm_net
             self.calib_net = calib_net
 
+        # extract model path
         self.model_path = os.path.abspath(os.path.join(os.path.dirname(__file__), 'model'))
-        self.delta = torch.zeros((68,3),requires_grad=True)
-        #self.calib_net.eval()
-        #self.sfm_net.eval()
-        #self.delta_net.eval()
+        self.delta = torch.zeros((68, 3), requires_grad=True)
 
-        #self.sfm_opt = torch.optim.Adam(self.sfm_net.parameters(),lr=5e-1)
-        #self.calib_opt = torch.optim.Adam(self.calib_net.parameters(),lr=1e-4)
-        #self.calib_opt = torch.optim.Adam(self.calib_net.parameters(),lr=7e-4)
-        #self.delta_opt = torch.optim.Adam(self.delta_net.parameters(),lr=2e-4)
-        self.opt = torch.optim.Adam(list(self.sfm_net.parameters()) + list(self.calib_net.parameters()),
-                lr = 1e-3)
-        self.sfm_opt = torch.optim.Adam(self.sfm_net.parameters(),lr=1e-3)
-        self.calib_opt = torch.optim.Adam(self.calib_net.parameters(),lr=1e-2)
+        # set learning rates
+        self.calib_lr = calib_lr
+        self.sfm_lr = sfm_lr
 
+        # define optimizers and set learning rates
+
+        # optimizer for both K and SFM
+        self.opt = torch.optim.Adam(list(self.sfm_net.parameters()) + list(self.calib_net.parameters()), lr=1e-3)
+        # optimizer for just SFM (used in AO approach)
+        self.sfm_opt = torch.optim.Adam(self.sfm_net.parameters(), lr=self.sfm_lr)
+        # optimizer for just K (used in AO approach)
+        self.calib_opt = torch.optim.Adam(self.calib_net.parameters(), lr=calib_lr)
+
+        self.tb_writer = tb_writer
 
     def set_eval(self):
         self.sfm_net.eval()
@@ -202,7 +214,20 @@ class Optimizer():
         return out_str
 
     # optimize the shape parameters given K
-    def opt_shape(self,ptsI,K,max_iter=5,log=True):
+    def opt_shape(self, ptsI, K, max_iter=5, global_loop_index=0, log=True):
+        """Performs shape optimization in several loops using estimated camera matrix K
+
+        Args:
+            ptsI: _description_
+            K: _description_
+            global_loop_index: _description_
+            max_iter: _description_. Defaults to 5.
+            log: _description_. Defaults to True.
+
+        Returns:
+            _description_
+        """
+
         b = ptsI.shape[0]
         for i in range(max_iter):
             self.sfm_opt.zero_grad()
@@ -210,20 +235,20 @@ class Optimizer():
 
             # predict S
             S = self.get_shape(ptsI)
-            #S = self.get_shape(ptsI).mean(0).unsqueeze(0).repeat(b,1,1)
 
             # differentiable PnP pose estimation
-            Xc, R, T = util.EPnP_(ptsI.permute(0,2,1),S,K)
+            Xc, R, T = util.EPnP_(ptsI.permute(0, 2, 1), S, K)
 
-            # Get Error
-            error2d = losses.getError(ptsI,S,R,T,K,show=False,loss='l2').mean()
-            #error2d = torch.log(losses.getXcError(ptsI,Xc,K))
-            #error2d = losses.getXcError(ptsI,Xc,K)
-            error_p = losses.compute_principal_error(K,self.center.unsqueeze(0)).mean()
+            # calculate error components
+            # calculate 3D face landmarks reprojection error
+            error2d = losses.getError(ptsI, S, R, T, K, show=False, loss='l2').mean()
+            error_p = losses.compute_principal_error(K, self.center.unsqueeze(0)).mean()
             error_motion = torch.log(losses.motionError(Xc.mean(1))).mean()
 
             # apply loss
+            # NOTE: For some reason we are using a different loss in case of shape prediction
             loss = error2d
+
             loss.backward()
             self.sfm_opt.step()
 
@@ -231,6 +256,12 @@ class Optimizer():
             f = torch.mean(K[:,0,0])
             px = torch.mean(K[:,0,2])
             py = torch.mean(K[:,1,2])
+
+            # log scalars to TensorBoard
+            self.tb_writer.add_scalar('optim/shape_loss', loss, global_loop_index * max_iter + i)
+            self.tb_writer.add_scalar('optim/shape_f', f, global_loop_index * max_iter + i)
+
+            # log optimization progress (loss == error == 3D face landmarks reprojection error)
             pred = {'iter': i, 'error': loss, 'e_pr': error_p,'e_m': error_motion,'f': f,
                     'e2d': error2d,'px': px, 'py': py}
             self.gt['S_pred'] = S.mean(0).detach().cpu()
@@ -313,7 +344,20 @@ class Optimizer():
 
     # optimize the K parameters given S
     # given single 3D shape S estimate 3D model
-    def opt_calib(self,ptsI,S,max_iter=5,still=False):
+    def opt_calib(self, ptsI, S, max_iter=5, global_loop_index=0, still=False):
+        """Performs K optimization in several loops using estimated shape S
+
+        Args:
+            ptsI: _description_
+            S: _description_
+            global_loop_index: _description_
+            max_iter: _description_. Defaults to 5.
+            still: _description_. Defaults to False.
+
+        Returns:
+            _description_
+        """
+
         b = ptsI.shape[0]
         for i in range(max_iter):
             self.calib_opt.zero_grad()
@@ -326,6 +370,8 @@ class Optimizer():
 
             # get Error
             #error2d = torch.log(losses.getXcError(ptsI,Xc,K))
+            # calculate 3D face landmarks reprojection error
+            # NOTE: Here natural logarithm of reprojection error is used instead of just the error
             error2d = torch.log(losses.getError(ptsI,S,R,T,K,show=False,loss='l2').mean())
             e2d = losses.getError(ptsI,S,R,T,K,show=False,loss='l2').mean()
             #error2d = util.getReprojError2(ptsI,S,R,T,K.mean(0),show=False,loss='l2')
@@ -337,6 +383,10 @@ class Optimizer():
             error_p = losses.compute_principal_error(K,self.center.unsqueeze(0)).mean()
 
             # apply loss
+            # NOTE: Since we don't know what the GT K is, the only error we can calculate is the projection error of
+            #       estimated face 3D landmarks on a camera frame ('error2d'). Also, assuming that we know the GT
+            #       principal point we can calculate the principal point error as mean delta between estimated px & py
+            #       and the actual ones.
             loss = error2d + error_p*1e-2
             #loss = error2d + error_motion + error_p*1e-2
             loss.backward()
@@ -346,8 +396,17 @@ class Optimizer():
             f = torch.mean(K[:,0,0])
             px = torch.mean(K[:,0,2])
             py = torch.mean(K[:,1,2])
+
+            # log scalars to TensorBoard
+            self.tb_writer.add_scalar('optim/calib_loss', loss, global_loop_index * max_iter + i)
+            self.tb_writer.add_scalar('optim/calib_f', f, global_loop_index * max_iter + i)
+
+            # log optimization progress (loss == error ~= 3D face landmarks reprojection error)
             pred = {'iter': i, 'error': loss, 'e_pr': error_p,'e_m': error_motion,'f': f,
                     'e2d': error2d,'px': px, 'py': py,'e2d': e2d}
+
+            # TODO: add logging to TensorBoard
+
             self.gt['S_pred'] = S.mean(0).detach().cpu()
             self.gt['dpred'] = torch.norm(T,dim=1)
             self.console_log(pred)
@@ -392,15 +451,26 @@ class Optimizer():
         return pred
 
     # perform Alternating optimization (AO)
-    def dualoptimization(self, x, max_iter=5):
+    def dualoptimization(self, x, global_iter_count=5, calib_iter_count=5, sfm_iter_count=5):
+        """Performs camera matrix K and shape S optimization using the Alternating Optimization (AO) approach
+
+        Args:
+            x: _description_
+            global_iter_count: _description_. Defaults to 5.
+            calib_iter_count: _description_. Defaults to 5.
+            sfm_iter_count: _description_. Defaults to 5.
+
+        Returns:
+            _description_
+        """
 
         # experimental values
         # MAX_CALIB_ITER = 20
         # MAX_SHAPE_ITER = 20
 
         # defaults used in paper
-        MAX_CALIB_ITER = 5
-        MAX_SHAPE_ITER = 5
+        # MAX_CALIB_ITER = 5
+        # MAX_SHAPE_ITER = 5
 
         # get initial shape and intrinsics
         b = x.shape[0]
@@ -412,16 +482,20 @@ class Optimizer():
         print(self.get_initial_motion(x))
         print(still)
 
-        #create param optimizer
+        # initialize best error value to some insanely large number
         best = 100000
-        for i in range(max_iter):
-            pred = self.opt_calib(x, pred['S'].mean(0).unsqueeze(0).repeat(b,1,1),still=still,max_iter=MAX_CALIB_ITER)
-            pred = self.opt_shape(x, pred['K'].mean(0).unsqueeze(0).repeat(b,1,1),max_iter=MAX_SHAPE_ITER)
+
+        # create param optimizer
+        for i in range(global_iter_count):
+            pred = self.opt_calib(x, pred['S'].mean(0).unsqueeze(0).repeat(b, 1, 1), max_iter=calib_iter_count, global_loop_index=i, still=still)
+            pred = self.opt_shape(x, pred['K'].mean(0).unsqueeze(0).repeat(b, 1, 1), max_iter=sfm_iter_count, global_loop_index=i)
             loss = pred['error']
 
-            #if ((torch.abs(best - loss) <= 0.01 or best < loss) and i >= 5) or i == max_iter: break
-            if i == max_iter: break
-            if loss < best: best = loss
+            # TODO: break optimization when it hits an acceptable level
+            if i == global_iter_count:
+                break
+            if loss < best:
+                best = loss
 
         # show optimization curve
         if self.visualize:
