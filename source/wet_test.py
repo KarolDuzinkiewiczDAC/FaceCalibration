@@ -202,13 +202,13 @@ def load_gt_camera_parameters(test_data: str) -> NDArray[np.float32]:
 
     filepath = None
     if test_data == 'kjduzink_laptop':
-        filepath = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), f'../wet/asus_tuf_f15_calibration.npz')))
+        filepath = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), '../wet/asus_tuf_f15_calibration.npz')))
     elif test_data == 'kjduzink_phone':
-        filepath = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), f'../wet/oppo_reno_6_5g_calibration.npz')))
+        filepath = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), '../wet/oppo_reno_6_5g_calibration.npz')))
     elif test_data == 'jglinko_phone':
-        filepath = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), f'../wet/samsung_s10e_calibration.npz')))
+        filepath = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), '../wet/samsung_s10e_calibration.npz')))
     elif test_data == 'askrzyne_phone':
-        filepath = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), f'../wet/huawei_p30_calibration.npz')))
+        filepath = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), '../wet/huawei_p30_calibration.npz')))
 
     assert filepath
     with open(filepath, 'rb') as f:
@@ -263,9 +263,9 @@ def main():
     print('*** FaceCalibration test on WET data ***')
 
     # TEST_DATA = 'kjduzink_laptop'
-    # TEST_DATA = 'kjduzink_phone'
+    TEST_DATA = 'kjduzink_phone'
     # TEST_DATA = 'jglinko_phone'
-    TEST_DATA = 'askrzyne_phone'
+    # TEST_DATA = 'askrzyne_phone'
 
     # USE_OPTIMIZATION = True
     USE_OPTIMIZATION = False
