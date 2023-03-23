@@ -92,34 +92,43 @@ DLIB_2_FACE_BLAZE_MAPPING = [
 # NOTE: Keypoints on few of the captured frames seem a little off, so we don't take those frames into account in calculations.
 VALID_FRAME_INDEXES_DATA_1 = [1, 2, 3, 4, 5, 6, 7, 8, 9]
 
-def load_wet_data() -> Tuple[List[NDArray[np.uint8]], List[NDArray[np.float32]]]:
+
+def load_wet_data(test_data: str) -> Tuple[List[NDArray[np.uint8]], List[NDArray[np.float32]]]:
     """Loads data dumped using face keypoint extraction script
+
+    Arguments:
+        test_data: tag of the test data that is used during tests
 
     Returns:
         list of frames & list of dlib's keypoints related to those frames
     """
 
-    # data1
-    # DATA_FOLDER = 'data1'
-    # VALID_FRAME_INDEXES = VALID_FRAME_INDEXES_DATA_1
+    assert test_data in ['kjduzink_laptop', 'kjduzink_phone', 'jglinko_phone', 'askrzyne_phone']
 
-    # data2 - from laptop
-    # DATA_FOLDER = 'data2'
-    # VALID_FRAME_INDEXES = [i for i in range(100)]
+    DATA_FOLDER = None
+    VALID_FRAME_INDEXES = None
 
-    # data3 - from phone (kjduzink)
-    # DATA_FOLDER = 'data3'
-    # VALID_FRAME_INDEXES = [i for i in range(100)]
-
-    # data4 - from phone (jglinko)
-    DATA_FOLDER = 'data4'
-    VALID_FRAME_INDEXES = [i for i in range(100)]
+    if test_data == 'kjduzink_laptop':
+        DATA_FOLDER = 'data2'
+        VALID_FRAME_INDEXES = [i for i in range(100)]
+    elif test_data == 'kjduzink_phone':
+        DATA_FOLDER = 'data3'
+        VALID_FRAME_INDEXES = [i for i in range(100)]
+    elif test_data == 'jglinko_phone':
+        DATA_FOLDER = 'data4'
+        VALID_FRAME_INDEXES = [i for i in range(100)]
+    elif test_data == 'askrzyne_phone':
+        DATA_FOLDER = 'data5'
+        VALID_FRAME_INDEXES = [i for i in range(100)]
 
     frames = []
     face_blaze_keypoints_list = []
 
     width = None
     height = None
+
+    assert DATA_FOLDER
+    assert VALID_FRAME_INDEXES
 
     for i in VALID_FRAME_INDEXES:
         filepath = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), f'../wet/{DATA_FOLDER}/frame_kpts_{i}.npy')))
@@ -178,28 +187,40 @@ def face_blaze_2_dlib_2d(fb_landmarks: NDArray[np.float32], width:int = 640, hei
     return dlib_landmarks
 
 
-def load_gt_camera_parameters() -> NDArray[np.float32]:
+def load_gt_camera_parameters(test_data: str) -> NDArray[np.float32]:
     """Loads camera matrix and other parameters obtained using standard camera calibration
     procedure (i.e. using chessboard as calibration target)
+
+    Arguments:
+        test_data: tag of the test data that is used during tests
 
     Returns:
         GT camera matrix
     """
 
-    # filepath = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), f'../wet/asus_tuf_f15_calibration.npz')))
-    # filepath = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), f'../wet/oppo_reno_6_5g_calibration.npz')))
-    filepath = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), f'../wet/samsung_s10e_calibration.npz')))
+    assert test_data in ['kjduzink_laptop', 'kjduzink_phone', 'jglinko_phone', 'askrzyne_phone']
 
+    filepath = None
+    if test_data == 'kjduzink_laptop':
+        filepath = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), f'../wet/asus_tuf_f15_calibration.npz')))
+    elif test_data == 'kjduzink_phone':
+        filepath = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), f'../wet/oppo_reno_6_5g_calibration.npz')))
+    elif test_data == 'jglinko_phone':
+        filepath = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), f'../wet/samsung_s10e_calibration.npz')))
+    elif test_data == 'askrzyne_phone':
+        filepath = os.path.abspath(os.path.abspath(os.path.join(os.path.dirname(__file__), f'../wet/huawei_p30_calibration.npz')))
+
+    assert filepath
     with open(filepath, 'rb') as f:
         npz_file = np.load(f, allow_pickle=True)
         legacy_camera_matrix = npz_file['camera_matrix']
-        legacy_camera_distortion = npz_file['camera_distortion']
-        legacy_reprojection_error = npz_file['reprojection_error']
+        # legacy_camera_distortion = npz_file['camera_distortion']
+        # legacy_reprojection_error = npz_file['reprojection_error']
         legacy_camera_resolution = npz_file['camera_resolution']
 
     # print(f'Measured camera matrix:\n{legacy_camera_matrix}')
     # print(f'Measured camera distortion coeffs:\n{legacy_camera_distortion}')
-    # print(f'Measured camera resolution:\n{legacy_camera_resolution}')
+    print(f'Measured camera resolution:\n{legacy_camera_resolution}')
     # print(f'Measured reprojection error:\n{legacy_reprojection_error}')
 
     return legacy_camera_matrix
@@ -240,6 +261,11 @@ def convert_keypoints_list_to_tensor(keypoints_list: List[NDArray[np.float32]]) 
 
 def main():
     print('*** FaceCalibration test on WET data ***')
+
+    # TEST_DATA = 'kjduzink_laptop'
+    # TEST_DATA = 'kjduzink_phone'
+    # TEST_DATA = 'jglinko_phone'
+    TEST_DATA = 'askrzyne_phone'
 
     # USE_OPTIMIZATION = True
     USE_OPTIMIZATION = False
@@ -312,7 +338,7 @@ def main():
         print('FaceCalibration\'s optimizer is ready to use')
 
         # load face landmarks data from MediaPipe sample app
-        _, face_keypoints_list = load_wet_data()
+        _, face_keypoints_list = load_wet_data(TEST_DATA)
 
         # convert list of NumPy arrays to a tensor
         face_keypoints_tensor = convert_keypoints_list_to_tensor(face_keypoints_list)
@@ -386,7 +412,7 @@ def main():
         print(f'K_avg:\n{K_avg}')
 
         # load GT camera parameters
-        K_gt = load_gt_camera_parameters()
+        K_gt = load_gt_camera_parameters(TEST_DATA)
         assert K_gt is not None and K_gt.shape == (3, 3)
         print(f'K_gt:\n{K_gt}')
 
