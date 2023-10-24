@@ -1,4 +1,5 @@
 
+import argparse
 import time
 from datetime import datetime
 from itertools import product
@@ -7,12 +8,13 @@ import dataloader
 import losses
 import torch
 import wet_dataloader
+from wet_dataloader import ImageOrientation
 from optimizer import Optimizer
 from torch.utils.tensorboard import SummaryWriter
 
 # a flag describing if we use the default synthetic dataloader (long distances of faces)
 # or use WET-specific data loader which better illustrates example face landmark data recorded with a phone
-USE_WET_DATALOADER = True
+# USE_WET_DATALOADER = True
 
 # number of total epochs to run
 EPOCHS_COUNT = 1
@@ -30,7 +32,17 @@ CALIB_LRS = [1e-2, 1e-3, 1e-4]
 SFM_LRS = [1e-3, 1e-4, 1e-5]
 
 
-def train(device='cuda'):
+def train(device: str = 'cuda',
+          data_loader_type: str = 'legacy',
+          orientation=ImageOrientation.PORTRAIT) -> None:
+    """Main training loop.
+
+    Args:
+        device (str, optional): Device to use for training. Defaults to 'cuda'.
+        data_loader_type (str, optional): Data loader to use. Defaults to 'legacy'.
+        orientation (ImageOrientation, optional): Device orientation. Defaults to ImageOrientation.PORTRAIT.
+    """
+
     # define hyper parameters dict
     hparameters = dict(
         f_error_weights=F_ERROR_WEIGHTS,
@@ -51,27 +63,22 @@ def train(device='cuda'):
         timestamp_tag = date_time.strftime("%d-%m-%Y_%H:%M:%S")
 
         # instantiate TensorBoard's SummaryWriter object to track training progress
-
-        # if USE_WET_DATALOADER:
-        #     tb_log_folder = f'runs/wet/{timestamp_tag}'
-        # else:
-        #     tb_log_folder = f'runs/legacy/{timestamp_tag}'
-        # writer = SummaryWriter(log_dir=tb_log_folder)
-
-        data_tag = 'wet' if USE_WET_DATALOADER else 'legacy'
-        comment = f'id_{run_id}_{timestamp_tag},data={data_tag},f_w={f_error_weight:.02f},s_w={s_error_weight:.02f},calib_lr={calib_lr:.06f},sfm_lr={sfm_lr:.06f}'
+        data_tag = 'wet' if data_loader_type=='wet' else 'legacy'
+        comment = f'id_{run_id}_{timestamp_tag},data={data_tag},orient={orientation.value},f_w={f_error_weight:.02f},s_w={s_error_weight:.02f},calib_lr={calib_lr:.06f},sfm_lr={sfm_lr:.06f}'
         writer = SummaryWriter(comment=comment)
 
         # placeholders
         loader = None
         center = None
 
-        if not USE_WET_DATALOADER:
+        if data_loader_type == 'legacy':
             loader = dataloader.SyntheticLoader()
             center = torch.tensor([loader.w / 2, loader.h / 2, 1])
-        else:
-            loader = wet_dataloader.WetSyntheticLoader()
+        elif data_loader_type == 'wet':
+            loader = wet_dataloader.WetSyntheticLoader(image_orientation=orientation)
             center = torch.tensor([loader.camera_frame_width_pixels / 2, loader.camera_frame_height_pixels / 2, 1])
+        else:
+            raise ValueError(f'Unsupported data loader type: {data_loader_type}')
 
         # instantiate optimizer
         optim = Optimizer(center, gt=None)
@@ -136,7 +143,7 @@ def train(device='cuda'):
                 print(f"epoch: {epoch} | iter: {i} | f_error: {f_error.item():.3f} | f/fgt: {K.mean(0)[0,0].item():.2f}/{fgt.item():.2f} | S_err: {s_error.item():.3f} ")
 
             # store the model on disk
-            optim.save(f'{epoch:02d}_fw={f_error_weight:.02f}_sw={s_error_weight:.02f}_clr={calib_lr:06f}_slr={sfm_lr:.06f}_')
+            optim.save(f'{epoch:02d}_orient={orientation.value}_fw={f_error_weight:.02f}_sw={s_error_weight:.02f}_clr={calib_lr:06f}_slr={sfm_lr:.06f}_')
 
         # log hyper-parameters
         writer.add_hparams(
@@ -156,5 +163,26 @@ def train(device='cuda'):
 
 if __name__ == '__main__':
 
-    train()
+    # parse command line arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--data-loader', type=str, default='legacy', help='Data loader to use: legacy or wet')
+    parser.add_argument('--orientation', type=str, default='portrait', help='Device orientation: portrait or landscape')
+    args = parser.parse_args()
 
+    if args.data_loader == 'legacy':
+        print('[WARNING] Desired image orientation will be ignored since you are not using WET data loader')
+    elif args.data_loader == 'wet':
+        print(f'Using device orientation: {args.orientation}')
+    else:
+        raise ValueError(f'Unsupported data loader: {args.data_loader}')
+
+    # map device orientation tag to the right enum value
+    if args.orientation == 'portrait':
+        orientation = ImageOrientation.PORTRAIT
+    elif args.orientation == 'landscape':
+        orientation = ImageOrientation.LANDSCAPE
+    else:
+        raise ValueError(f'Unsupported device orientation: {args.orientation}')
+
+    # run the main training loop
+    train(data_loader_type=args.data_loader, orientation=orientation)

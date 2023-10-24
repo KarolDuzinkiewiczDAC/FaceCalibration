@@ -3,6 +3,7 @@ import logging
 import numpy as np
 import random
 import torch
+from enum import Enum
 from torch.utils.data import Dataset, DataLoader
 
 from typing import Dict, Any
@@ -12,9 +13,21 @@ from wet_test import DLIB_2_FACE_BLAZE_MAPPING
 
 logger = logging.getLogger(__name__)
 
+
+# define portrait/landscape mode enum class
+class ImageOrientation(Enum):
+    PORTRAIT = 'portrait'
+    LANDSCAPE = 'landscape'
+
+
 class WetSyntheticLoader(Dataset):
 
-    def __init__(self):
+    def __init__(self, image_orientation: ImageOrientation = ImageOrientation.PORTRAIT):
+        """Class constructor.
+
+        Parameters
+            image_orientation: image orientation, either portrait or landscape
+        """
 
         # set number of frames in the batch
         self.M: int = 100
@@ -22,8 +35,16 @@ class WetSyntheticLoader(Dataset):
         self.N: int = 68
 
         # extra boundaries on camera coordinates
-        self.camera_frame_width_pixels: float = 480.0
-        self.camera_frame_height_pixels: float = 640.0
+        # NOTE: For the majority of modern phones the resolution of the user facing camera is 480x640 in portrait mode
+        #       and 640x480 in landscape mode.
+        if image_orientation == ImageOrientation.PORTRAIT:
+            self.camera_frame_width_pixels: float = 480.0
+            self.camera_frame_height_pixels: float = 640.0
+        elif image_orientation == ImageOrientation.LANDSCAPE:
+            self.camera_frame_width_pixels: float = 640.0
+            self.camera_frame_height_pixels: float = 480.0
+        else:
+            raise ValueError("Unsupported image orientation")
 
         # define boundaries for f value
         self.f_min = 300.0
@@ -767,7 +788,7 @@ class WetSyntheticLoader(Dataset):
             final_rot_y = random.uniform(rot_y_min, rot_y_max)
             final_rot_z = random.uniform(rot_z_min, rot_z_max)
 
-            # generate initial and final landmark projection
+            # generate initial and final landmark projections
             initial_projection = WetSyntheticLoader._generate_landmark_projection(
                 face_landmarks_3d_fcs,
                 camera_frame_width_pixels,
